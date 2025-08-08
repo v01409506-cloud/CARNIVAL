@@ -48,7 +48,13 @@
     <div class="content-overlay min-h-screen">
         <!-- Header -->
         <header class="flex justify-between items-center p-4 bg-black bg-opacity-70">
-            <h1 class="text-4xl font-bold text-red-500 drop-shadow-lg">🎭 Carnival</h1>
+            <div class="flex items-center space-x-4 space-x-reverse">
+                <h1 class="text-4xl font-bold text-red-500 drop-shadow-lg">🎭 Carnival</h1>
+                <div id="liveStatus" class="flex items-center space-x-2 space-x-reverse bg-green-600 px-3 py-1 rounded-full text-sm font-bold">
+                    <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                    <span>آنلاین</span>
+                </div>
+            </div>
             <button id="menuBtn" class="text-3xl hover:text-red-500 transition-colors duration-300 hover:scale-110">☰</button>
         </header>
 
@@ -421,9 +427,35 @@
 
                         <!-- User Management -->
                         <div class="bg-gray-800 p-6 rounded-lg border border-green-400">
-                            <h3 class="text-2xl font-bold mb-6 text-green-400">👥 کاربران وارد شده</h3>
-                            <div id="usersList" class="space-y-3 max-h-96 overflow-y-auto">
-                                <!-- Users will be displayed here -->
+                            <h3 class="text-2xl font-bold mb-6 text-green-400">👥 مدیریت کاربران</h3>
+                            
+                            <!-- Add New User -->
+                            <div class="mb-6 bg-gray-700 p-4 rounded-lg border border-blue-400">
+                                <h4 class="text-lg font-bold mb-3 text-blue-400">➕ ایجاد کاربر جدید</h4>
+                                <div class="flex space-x-2 space-x-reverse">
+                                    <input type="text" id="addUserName" placeholder="نام کاربری جدید" 
+                                           class="flex-1 p-3 rounded-lg bg-gray-600 text-white border border-gray-500 focus:border-blue-500 transition-colors">
+                                    <button onclick="addUserBack()" class="bg-blue-600 hover:bg-blue-700 px-4 py-3 rounded-lg font-bold transition-colors whitespace-nowrap">
+                                        ➕ ایجاد کاربر
+                                    </button>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-2">رمز عبور پیش‌فرض: password123</p>
+                            </div>
+                            
+                            <!-- All Users -->
+                            <div class="mb-6">
+                                <h4 class="text-lg font-bold mb-3 text-green-400">👥 همه کاربران</h4>
+                                <div id="usersList" class="space-y-3 max-h-64 overflow-y-auto">
+                                    <!-- Users will be displayed here -->
+                                </div>
+                            </div>
+                            
+                            <!-- Info Section -->
+                            <div>
+                                <h4 class="text-lg font-bold mb-3 text-yellow-400">ℹ️ اطلاعات</h4>
+                                <div id="removedUsersList" class="space-y-3 max-h-64 overflow-y-auto">
+                                    <!-- Info will be displayed here -->
+                                </div>
                             </div>
                         </div>
 
@@ -447,7 +479,7 @@
                         <div class="grid md:grid-cols-4 gap-4">
                             <div>
                                 <label class="block text-lg font-bold mb-2 text-gray-300">حذف آموزش:</label>
-                                <select id="deleteContentSelect" class="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-red-500 transition-colors mb-2">
+                                <select id="deleteTutorialSelect" class="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-red-500 transition-colors mb-2">
                                     <option value="">انتخاب آموزش برای حذف</option>
                                 </select>
                                 <button onclick="deleteSelectedContent('tutorials')" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded-lg font-bold transition-colors text-sm">
@@ -478,7 +510,7 @@
                                     <option value="">انتخاب محتوا برای حذف</option>
                                 </select>
                                 <button onclick="deleteSelectedContent('siteContent')" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded-lg font-bold transition-colors text-sm">
-                                    🗑️ حذف محتوا
+                                    🗑️ حذف محتوای سایت
                                 </button>
                             </div>
                         </div>
@@ -559,30 +591,133 @@
         function checkForContentUpdates() {
             const newContent = JSON.parse(localStorage.getItem('carnivalContent') || '{"tutorials":[],"scenarios":[],"groups":[],"siteContent":[]}');
             const newAbout = JSON.parse(localStorage.getItem('carnivalAbout') || '{}');
+            const newUsers = JSON.parse(localStorage.getItem('carnivalUsers') || '{}');
             
             // Check if content has changed
             if (JSON.stringify(content) !== JSON.stringify(newContent)) {
+                const oldContentString = JSON.stringify(content);
                 content = newContent;
+                
+                // Reload all content displays
                 loadContent();
                 loadHomeContent();
-                showContentUpdateNotification();
+                updateDeleteLists();
+                
+                // Show notification to non-admin users
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification('🔄 محتوای سایت بروزرسانی شد!');
+                }
+                
+                // Check what type of change occurred
+                const oldContent = JSON.parse(oldContentString);
+                checkSpecificContentChanges(oldContent, newContent);
             }
             
             // Check if about section has changed
             const currentAbout = JSON.parse(localStorage.getItem('carnivalAbout') || '{}');
             if (JSON.stringify(newAbout) !== JSON.stringify(currentAbout)) {
                 loadAboutSection();
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification('📝 بخش درباره کارناوال بروزرسانی شد!');
+                }
+            }
+            
+            // Check if users list has changed
+            if (JSON.stringify(users) !== JSON.stringify(newUsers)) {
+                users = newUsers;
+                updateUsersList();
+            }
+        }
+        
+        // Check specific content changes and notify users
+        function checkSpecificContentChanges(oldContent, newContent) {
+            // Check for new tutorials
+            if (newContent.tutorials.length > oldContent.tutorials.length) {
+                const newTutorial = newContent.tutorials[newContent.tutorials.length - 1];
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification(`📚 آموزش جدید: ${newTutorial.title}`);
+                }
+            }
+            
+            // Check for new scenarios
+            if (newContent.scenarios.length > oldContent.scenarios.length) {
+                const newScenario = newContent.scenarios[newContent.scenarios.length - 1];
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification(`🎲 سناریو جدید: ${newScenario.title}`);
+                }
+            }
+            
+            // Check for new groups
+            if (newContent.groups.length > oldContent.groups.length) {
+                const newGroup = newContent.groups[newContent.groups.length - 1];
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification(`👥 گروه جدید: ${newGroup.title}`);
+                }
+            }
+            
+            // Check for new site content
+            if (newContent.siteContent.length > oldContent.siteContent.length) {
+                const newSiteContent = newContent.siteContent[newContent.siteContent.length - 1];
+                if (!currentUser || !currentUser.isAdmin) {
+                    const typeText = {
+                        'news': 'خبر',
+                        'announcement': 'اطلاعیه', 
+                        'event': 'رویداد',
+                        'update': 'بروزرسانی'
+                    }[newSiteContent.siteType] || 'محتوا';
+                    showContentUpdateNotification(`🔥 ${typeText} جدید: ${newSiteContent.title}`);
+                }
+            }
+            
+            // Check for content deletions
+            if (newContent.tutorials.length < oldContent.tutorials.length) {
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification('🗑️ یک آموزش حذف شد');
+                }
+            }
+            
+            if (newContent.scenarios.length < oldContent.scenarios.length) {
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification('🗑️ یک سناریو حذف شد');
+                }
+            }
+            
+            if (newContent.groups.length < oldContent.groups.length) {
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification('🗑️ یک گروه حذف شد');
+                }
+            }
+            
+            if (newContent.siteContent.length < oldContent.siteContent.length) {
+                if (!currentUser || !currentUser.isAdmin) {
+                    showContentUpdateNotification('🗑️ یک محتوا حذف شد');
+                }
             }
         }
         
         // Show content update notification
-        function showContentUpdateNotification() {
+        function showContentUpdateNotification(message = 'محتوای جدید اضافه شد!', type = 'update') {
+            // Remove existing notifications first
+            const existingNotifications = document.querySelectorAll('.live-notification');
+            existingNotifications.forEach(notif => {
+                if (document.body.contains(notif)) {
+                    document.body.removeChild(notif);
+                }
+            });
+            
             const notification = document.createElement('div');
-            notification.className = 'fixed top-4 right-4 bg-green-600 text-white p-4 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300';
+            const bgColor = type === 'delete' ? 'bg-red-600' : type === 'edit' ? 'bg-blue-600' : 'bg-green-600';
+            const icon = type === 'delete' ? '🗑️' : type === 'edit' ? '✏️' : '🔄';
+            
+            notification.className = `live-notification fixed top-4 right-4 ${bgColor} text-white p-4 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300 border-2 border-white`;
             notification.innerHTML = `
-                <div class="flex items-center space-x-2 space-x-reverse">
-                    <span class="text-2xl">🔄</span>
-                    <span class="font-bold">محتوای جدید اضافه شد!</span>
+                <div class="flex items-center space-x-3 space-x-reverse">
+                    <span class="text-2xl animate-pulse">${icon}</span>
+                    <div>
+                        <div class="font-bold text-lg">${message}</div>
+                        <div class="text-sm opacity-90">بروزرسانی آنلاین</div>
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-300 text-xl font-bold ml-2">×</button>
                 </div>
             `;
             
@@ -593,13 +728,25 @@
                 notification.classList.remove('translate-x-full');
             }, 100);
             
-            // Slide out and remove
+            // Auto slide out and remove after 5 seconds
             setTimeout(() => {
-                notification.classList.add('translate-x-full');
+                if (document.body.contains(notification)) {
+                    notification.classList.add('translate-x-full');
+                    setTimeout(() => {
+                        if (document.body.contains(notification)) {
+                            document.body.removeChild(notification);
+                        }
+                    }, 300);
+                }
+            }, 5000);
+            
+            // Add click sound effect (visual feedback)
+            notification.addEventListener('click', () => {
+                notification.style.transform = 'scale(0.95)';
                 setTimeout(() => {
-                    document.body.removeChild(notification);
-                }, 300);
-            }, 3000);
+                    notification.style.transform = 'scale(1)';
+                }, 100);
+            });
         }
         
         // Toggle content fields based on type
@@ -791,7 +938,8 @@
                 title: title,
                 text: text,
                 image: image,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                addedBy: currentUser.gameName
             };
 
             // Add specific fields based on content type
@@ -828,57 +976,227 @@
             loadHomeContent();
             updateDeleteLists();
             
-            // Show success notification
-            showAdminNotification('✅ محتوا با موفقیت اضافه شد!', 'success');
+            // Show success notification to admin and redirect to home
+            showAdminNotification('✅ محتوا با موفقیت اضافه شد! در حال انتقال به صفحه اصلی...', 'success');
+            
+            // Redirect to home page after 2 seconds to show the new content
+            setTimeout(() => {
+                showSection('home');
+                // Scroll to the new content area
+                const homeContentDisplay = document.getElementById('homeContentDisplay');
+                if (homeContentDisplay) {
+                    homeContentDisplay.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, 2000);
+            
+            // Trigger live update for all users
+            triggerLiveUpdate('add', type, newContent);
+        }
+        
+        // Trigger live update for all users
+        function triggerLiveUpdate(action, contentType, contentData) {
+            // Store the update info for other users to see
+            const updateInfo = {
+                action: action,
+                contentType: contentType,
+                contentData: contentData,
+                timestamp: Date.now(),
+                adminName: currentUser ? currentUser.gameName : 'ادمین'
+            };
+            
+            // Store in localStorage for other tabs/users to detect
+            let liveUpdates = JSON.parse(localStorage.getItem('carnivalLiveUpdates') || '[]');
+            liveUpdates.push(updateInfo);
+            
+            // Keep only last 10 updates
+            if (liveUpdates.length > 10) {
+                liveUpdates = liveUpdates.slice(-10);
+            }
+            
+            localStorage.setItem('carnivalLiveUpdates', JSON.stringify(liveUpdates));
+        }
+        
+        // Check for live updates from admin
+        function checkForLiveUpdates() {
+            if (currentUser && currentUser.isAdmin) return; // Admin doesn't need to see their own updates
+            
+            const liveUpdates = JSON.parse(localStorage.getItem('carnivalLiveUpdates') || '[]');
+            const lastChecked = localStorage.getItem('carnivalLastUpdateCheck') || '0';
+            const lastCheckedTime = parseInt(lastChecked);
+            
+            // Find new updates since last check
+            const newUpdates = liveUpdates.filter(update => update.timestamp > lastCheckedTime);
+            
+            if (newUpdates.length > 0) {
+                // Update last checked time
+                const latestUpdate = Math.max(...newUpdates.map(update => update.timestamp));
+                localStorage.setItem('carnivalLastUpdateCheck', latestUpdate.toString());
+                
+                // Show notifications for new updates
+                newUpdates.forEach(update => {
+                    showLiveUpdateNotification(update);
+                });
+            }
+        }
+        
+        // Show live update notification
+        function showLiveUpdateNotification(updateInfo) {
+            const { action, contentType, contentData, adminName } = updateInfo;
+            
+            let message = '';
+            let type = 'update';
+            
+            if (action === 'add') {
+                const typeText = {
+                    'tutorial': 'آموزش',
+                    'scenario': 'سناریو', 
+                    'group': 'گروه',
+                    'site': 'محتوای سایت'
+                }[contentType] || 'محتوا';
+                
+                message = `${adminName} ${typeText} جدیدی اضافه کرد: "${contentData.title}"`;
+                type = 'update';
+            } else if (action === 'delete') {
+                const typeText = {
+                    'tutorials': 'آموزش',
+                    'scenarios': 'سناریو',
+                    'groups': 'گروه', 
+                    'siteContent': 'محتوای سایت'
+                }[contentType] || 'محتوا';
+                
+                message = `${adminName} یک ${typeText} را حذف کرد`;
+                type = 'delete';
+            } else if (action === 'edit') {
+                message = `${adminName} محتوایی را ویرایش کرد: "${contentData.title}"`;
+                type = 'edit';
+            }
+            
+            if (message) {
+                showContentUpdateNotification(message, type);
+            }
         }
         
         // Update delete lists
         function updateDeleteLists() {
-            // Update tutorials delete list
-            const tutorialSelect = document.getElementById('deleteContentSelect');
-            tutorialSelect.innerHTML = '<option value="">انتخاب آموزش برای حذف</option>';
-            content.tutorials.forEach(tutorial => {
-                if (!tutorial.id || !tutorial.id.toString().startsWith('default')) {
+            if (!currentUser || !currentUser.isAdmin) return;
+            
+            // Update tutorials delete list (only admin's tutorials)
+            const tutorialSelect = document.getElementById('deleteTutorialSelect');
+            if (tutorialSelect) {
+                tutorialSelect.innerHTML = '<option value="">انتخاب آموزش برای حذف</option>';
+                const adminTutorials = content.tutorials.filter(tutorial => {
+                    return tutorial.id && !tutorial.id.toString().startsWith('default') && (
+                        tutorial.addedBy === currentUser.gameName || 
+                        tutorial.editedBy === currentUser.gameName || 
+                        tutorial.createdBy === currentUser.gameName ||
+                        !tutorial.addedBy // For backward compatibility
+                    );
+                });
+                
+                if (adminTutorials.length === 0) {
                     const option = document.createElement('option');
-                    option.value = tutorial.id;
-                    option.textContent = tutorial.title.replace(/🎯|👥|🌙|📖/g, '').trim();
+                    option.value = '';
+                    option.textContent = 'هیچ آموزش قابل حذفی وجود ندارد';
+                    option.disabled = true;
                     tutorialSelect.appendChild(option);
+                } else {
+                    adminTutorials.forEach(tutorial => {
+                        const option = document.createElement('option');
+                        option.value = tutorial.id;
+                        option.textContent = tutorial.title.replace(/🎯|👥|🌙|📖/g, '').trim() + 
+                            (tutorial.addedBy ? ` (توسط ${tutorial.addedBy})` : '');
+                        tutorialSelect.appendChild(option);
+                    });
                 }
-            });
+            }
             
-            // Update scenarios delete list
+            // Update scenarios delete list (only admin's scenarios)
             const scenarioSelect = document.getElementById('deleteScenarioSelect');
-            scenarioSelect.innerHTML = '<option value="">انتخاب سناریو برای حذف</option>';
-            content.scenarios.forEach(scenario => {
-                if (!scenario.id || !scenario.id.toString().startsWith('default')) {
+            if (scenarioSelect) {
+                scenarioSelect.innerHTML = '<option value="">انتخاب سناریو برای حذف</option>';
+                const adminScenarios = content.scenarios.filter(scenario => {
+                    return scenario.id && !scenario.id.toString().startsWith('default') && (
+                        scenario.addedBy === currentUser.gameName || 
+                        scenario.editedBy === currentUser.gameName || 
+                        scenario.createdBy === currentUser.gameName ||
+                        !scenario.addedBy // For backward compatibility
+                    );
+                });
+                
+                if (adminScenarios.length === 0) {
                     const option = document.createElement('option');
-                    option.value = scenario.id;
-                    option.textContent = scenario.title.replace(/🏛️|🎭/g, '').trim();
+                    option.value = '';
+                    option.textContent = 'هیچ سناریو قابل حذفی وجود ندارد';
+                    option.disabled = true;
                     scenarioSelect.appendChild(option);
+                } else {
+                    adminScenarios.forEach(scenario => {
+                        const option = document.createElement('option');
+                        option.value = scenario.id;
+                        option.textContent = scenario.title.replace(/🏛️|🎭/g, '').trim() + 
+                            (scenario.addedBy ? ` (توسط ${scenario.addedBy})` : '');
+                        scenarioSelect.appendChild(option);
+                    });
                 }
-            });
+            }
             
-            // Update groups delete list
+            // Update groups delete list (only admin's groups)
             const groupSelect = document.getElementById('deleteGroupSelect');
-            groupSelect.innerHTML = '<option value="">انتخاب گروه برای حذف</option>';
-            content.groups.forEach(group => {
-                if (!group.id || !group.id.toString().startsWith('default')) {
+            if (groupSelect) {
+                groupSelect.innerHTML = '<option value="">انتخاب گروه برای حذف</option>';
+                const adminGroups = content.groups.filter(group => {
+                    return group.id && !group.id.toString().startsWith('default') && (
+                        group.addedBy === currentUser.gameName || 
+                        group.editedBy === currentUser.gameName || 
+                        group.createdBy === currentUser.gameName ||
+                        !group.addedBy // For backward compatibility
+                    );
+                });
+                
+                if (adminGroups.length === 0) {
                     const option = document.createElement('option');
-                    option.value = group.id;
-                    option.textContent = group.title.replace(/👥|🌱|🔥|⭐/g, '').trim();
+                    option.value = '';
+                    option.textContent = 'هیچ گروه قابل حذفی وجود ندارد';
+                    option.disabled = true;
                     groupSelect.appendChild(option);
+                } else {
+                    adminGroups.forEach(group => {
+                        const option = document.createElement('option');
+                        option.value = group.id;
+                        option.textContent = group.title.replace(/👥|🌱|🔥|⭐/g, '').trim() + 
+                            (group.addedBy ? ` (توسط ${group.addedBy})` : '');
+                        groupSelect.appendChild(option);
+                    });
                 }
-            });
+            }
             
-            // Update site content delete list
+            // Update site content delete list (only admin's site content)
             const siteContentSelect = document.getElementById('deleteSiteContentSelect');
-            siteContentSelect.innerHTML = '<option value="">انتخاب محتوا برای حذف</option>';
-            content.siteContent.forEach(siteItem => {
-                const option = document.createElement('option');
-                option.value = siteItem.id;
-                option.textContent = siteItem.title;
-                siteContentSelect.appendChild(option);
-            });
+            if (siteContentSelect) {
+                siteContentSelect.innerHTML = '<option value="">انتخاب محتوا برای حذف</option>';
+                const adminSiteContent = content.siteContent.filter(siteItem => {
+                    return siteItem.addedBy === currentUser.gameName || 
+                           siteItem.editedBy === currentUser.gameName || 
+                           siteItem.createdBy === currentUser.gameName ||
+                           !siteItem.addedBy; // For backward compatibility
+                });
+                
+                if (adminSiteContent.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'هیچ محتوای سایت قابل حذفی وجود ندارد';
+                    option.disabled = true;
+                    siteContentSelect.appendChild(option);
+                } else {
+                    adminSiteContent.forEach(siteItem => {
+                        const option = document.createElement('option');
+                        option.value = siteItem.id;
+                        option.textContent = siteItem.title + 
+                            (siteItem.addedBy ? ` (توسط ${siteItem.addedBy})` : '');
+                        siteContentSelect.appendChild(option);
+                    });
+                }
+            }
         }
         
         // Delete selected content
@@ -889,18 +1207,23 @@
             }
             
             let selectId;
+            let contentTypeText;
             switch(contentType) {
                 case 'tutorials':
-                    selectId = 'deleteContentSelect';
+                    selectId = 'deleteTutorialSelect';
+                    contentTypeText = 'آموزش';
                     break;
                 case 'scenarios':
                     selectId = 'deleteScenarioSelect';
+                    contentTypeText = 'سناریو';
                     break;
                 case 'groups':
                     selectId = 'deleteGroupSelect';
+                    contentTypeText = 'گروه';
                     break;
                 case 'siteContent':
                     selectId = 'deleteSiteContentSelect';
+                    contentTypeText = 'محتوای سایت';
                     break;
                 default:
                     return;
@@ -908,17 +1231,34 @@
             
             const selectedId = document.getElementById(selectId).value;
             if (!selectedId) {
-                alert('❌ لطفاً محتوایی برای حذف انتخاب کنید!');
+                alert(`❌ لطفاً ${contentTypeText}ی برای حذف انتخاب کنید!`);
+                return;
+            }
+            
+            // Check if it's a default item (prevent deletion for non-site content)
+            if (contentType !== 'siteContent' && selectedId.toString().startsWith('default')) {
+                alert(`❌ نمی‌توانید ${contentTypeText} پیش‌فرض را حذف کنید!`);
                 return;
             }
             
             const itemToDelete = content[contentType].find(item => item.id == selectedId);
             if (!itemToDelete) {
-                alert('❌ محتوای مورد نظر یافت نشد!');
+                alert(`❌ ${contentTypeText} مورد نظر یافت نشد!`);
                 return;
             }
             
-            if (confirm(`آیا مطمئن هستید که می‌خواهید "${itemToDelete.title}" را حذف کنید؟`)) {
+            // Check if this content was added/edited by admin
+            const isAdminContent = itemToDelete.addedBy === currentUser.gameName || 
+                                 itemToDelete.editedBy === currentUser.gameName || 
+                                 itemToDelete.createdBy === currentUser.gameName ||
+                                 !itemToDelete.id.toString().startsWith('default');
+            
+            if (!isAdminContent && contentType !== 'siteContent') {
+                alert(`❌ شما فقط می‌توانید ${contentTypeText}هایی که خودتان اضافه یا ویرایش کرده‌اید را حذف کنید!`);
+                return;
+            }
+            
+            if (confirm(`آیا مطمئن هستید که می‌خواهید ${contentTypeText} "${itemToDelete.title}" را حذف کنید؟\n\n⚠️ این عمل غیرقابل بازگشت است!`)) {
                 content[contentType] = content[contentType].filter(item => item.id != selectedId);
                 localStorage.setItem('carnivalContent', JSON.stringify(content));
                 
@@ -930,7 +1270,12 @@
                 loadHomeContent();
                 updateDeleteLists();
                 
-                showAdminNotification('✅ محتوا با موفقیت حذف شد!', 'success');
+                // Show success message
+                alert(`✅ ${contentTypeText} "${itemToDelete.title}" با موفقیت حذف شد!`);
+                showAdminNotification(`✅ ${contentTypeText} با موفقیت حذف شد!`, 'success');
+                
+                // Trigger live update for all users
+                triggerLiveUpdate('delete', contentType, itemToDelete);
             }
         }
         
@@ -1080,7 +1425,12 @@
                         ${scenario.image ? `<img src="${scenario.image}" alt="${scenario.title}" class="w-full h-48 object-cover rounded-lg mb-4">` : ''}
                         <h3 class="text-2xl font-bold mb-4 text-${color}-400">${scenario.title}</h3>
                         <p class="text-lg leading-relaxed">${scenario.text}</p>
-                        ${currentUser && currentUser.isAdmin && scenario.id !== 'default1' && scenario.id !== 'default2' ? `<button onclick="deleteContent('scenarios', ${scenario.id})" class="mt-4 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors">🗑️ حذف</button>` : ''}
+                        ${currentUser && currentUser.isAdmin ? `
+                            <div class="mt-4 space-x-2 space-x-reverse">
+                                <button onclick="editContent('scenarios', '${scenario.id}', '${scenario.title.replace(/'/g, "\\'")}', '${scenario.text.replace(/'/g, "\\'")}', '${scenario.image || ''}', '${scenario.color || 'green'}')" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors">✏️ ویرایش</button>
+                                ${!scenario.id || !scenario.id.toString().startsWith('default') ? `<button onclick="deleteContent('scenarios', '${scenario.id}')" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors">🗑️ حذف</button>` : ''}
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             });
@@ -1216,6 +1566,7 @@
             }
 
             const { type, id } = window.editingContent;
+            let updatedContent = null;
 
             // Check if it's a default item (update in place)
             if (id.startsWith('default')) {
@@ -1227,7 +1578,8 @@
                     text: text,
                     image: image,
                     overrideDefault: id,
-                    createdAt: new Date().toISOString()
+                    createdAt: new Date().toISOString(),
+                    editedBy: currentUser.gameName
                 };
 
                 // Add specific fields based on content type
@@ -1244,6 +1596,7 @@
                 }
 
                 content[type].push(newContent);
+                updatedContent = newContent;
             } else {
                 // Update existing custom content
                 const itemIndex = content[type].findIndex(item => item.id == id);
@@ -1253,7 +1606,8 @@
                         title: title,
                         text: text,
                         image: image,
-                        updatedAt: new Date().toISOString()
+                        updatedAt: new Date().toISOString(),
+                        editedBy: currentUser.gameName
                     };
 
                     // Update specific fields based on content type
@@ -1264,6 +1618,8 @@
                         const members = document.getElementById('groupMembers').value.trim();
                         content[type][itemIndex].members = members ? members.split(',').map(member => member.trim()).filter(member => member) : [];
                     }
+                    
+                    updatedContent = content[type][itemIndex];
                 }
             }
 
@@ -1284,7 +1640,13 @@
 
             // Refresh content display
             loadContent();
+            loadHomeContent();
             alert('✅ محتوا با موفقیت بروزرسانی شد!');
+            
+            // Trigger live update for all users
+            if (updatedContent) {
+                triggerLiveUpdate('edit', contentType, updatedContent);
+            }
         }
 
         // Delete content
@@ -1294,23 +1656,45 @@
                 return;
             }
 
-            if (confirm('آیا مطمئن هستید که می‌خواهید این محتوا را حذف کنید؟')) {
+            const itemToDelete = content[type].find(item => item.id == id);
+            if (!itemToDelete) {
+                alert('❌ محتوای مورد نظر یافت نشد!');
+                return;
+            }
+
+            if (confirm(`آیا مطمئن هستید که می‌خواهید "${itemToDelete.title}" را حذف کنید؟`)) {
                 content[type] = content[type].filter(item => item.id != id);
                 localStorage.setItem('carnivalContent', JSON.stringify(content));
+                
+                // Refresh all displays
                 loadContent();
-                alert('✅ محتوا با موفقیت حذف شد!');
+                loadHomeContent();
+                updateDeleteLists();
+                
+                alert(`✅ "${itemToDelete.title}" با موفقیت حذف شد!`);
+                showAdminNotification(`✅ محتوا با موفقیت حذف شد!`, 'success');
+                
+                // Trigger live update for all users
+                triggerLiveUpdate('delete', type, itemToDelete);
             }
         }
 
         // Update users list in admin panel
         function updateUsersList() {
             const usersList = document.getElementById('usersList');
+            const removedUsersList = document.getElementById('removedUsersList');
             if (!usersList) return;
 
-            const loggedInUsers = Object.entries(users).filter(([username, user]) => user.loginTime);
+            // Get all users (since we no longer use isRemoved flag)
+            const allUsers = Object.entries(users);
+            const loggedInUsers = allUsers.filter(([username, user]) => user.loginTime);
+            const offlineUsers = allUsers.filter(([username, user]) => !user.loginTime);
             
+            let usersHTML = '';
+            
+            // Show logged in users
             if (loggedInUsers.length > 0) {
-                usersList.innerHTML = loggedInUsers.map(([username, user]) => `
+                usersHTML += loggedInUsers.map(([username, user]) => `
                     <div class="bg-gray-700 p-4 rounded-lg border-r-4 border-green-500">
                         <div class="flex items-center justify-between">
                             <div>
@@ -1318,16 +1702,147 @@
                                 <span class="font-bold text-lg">${user.gameName}</span>
                                 <span class="text-gray-400">(${username})</span>
                                 ${user.isAdmin ? '<span class="text-yellow-400 text-xl">👑</span>' : ''}
+                                <span class="text-green-400 text-sm">آنلاین</span>
                             </div>
-                            <div class="text-sm text-gray-400">
-                                ${new Date(user.loginTime).toLocaleString('fa-IR')}
+                            <div class="flex items-center space-x-2 space-x-reverse">
+                                <div class="text-sm text-gray-400">
+                                    ${new Date(user.loginTime).toLocaleString('fa-IR')}
+                                </div>
+                                ${!user.isAdmin ? `
+                                    <button onclick="removeUser('${username}')" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm font-bold transition-colors">
+                                        🗑️ حذف کامل
+                                    </button>
+                                ` : ''}
                             </div>
                         </div>
                     </div>
                 `).join('');
-            } else {
-                usersList.innerHTML = '<div class="text-center p-8"><p class="text-gray-400 text-lg">😴 هیچ کاربری آنلاین نیست</p></div>';
             }
+            
+            // Show offline users
+            if (offlineUsers.length > 0) {
+                usersHTML += offlineUsers.map(([username, user]) => `
+                    <div class="bg-gray-700 p-4 rounded-lg border-r-4 border-gray-500">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-gray-400 text-xl">⚫</span> 
+                                <span class="font-bold text-lg text-gray-300">${user.gameName}</span>
+                                <span class="text-gray-500">(${username})</span>
+                                ${user.isAdmin ? '<span class="text-yellow-400 text-xl">👑</span>' : ''}
+                                <span class="text-gray-500 text-sm">آفلاین</span>
+                            </div>
+                            <div class="flex items-center space-x-2 space-x-reverse">
+                                <div class="text-sm text-gray-500">
+                                    ${user.createdAt ? `ایجاد شده: ${new Date(user.createdAt).toLocaleDateString('fa-IR')}` : 'تاریخ نامشخص'}
+                                </div>
+                                ${!user.isAdmin ? `
+                                    <button onclick="removeUser('${username}')" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm font-bold transition-colors">
+                                        🗑️ حذف کامل
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            if (usersHTML) {
+                usersList.innerHTML = usersHTML;
+            } else {
+                usersList.innerHTML = '<div class="text-center p-4"><p class="text-gray-400 text-lg">👤 هیچ کاربری وجود ندارد</p></div>';
+            }
+            
+            // Hide removed users section since we don't use it anymore
+            if (removedUsersList) {
+                removedUsersList.innerHTML = '<div class="text-center p-4"><p class="text-gray-400 text-lg">🗑️ کاربران حذف شده کاملاً پاک می‌شوند</p></div>';
+            }
+        }
+        
+        // Remove user function
+        function removeUser(username) {
+            if (!currentUser || !currentUser.isAdmin) {
+                alert('❌ فقط ادمین می‌تواند کاربران را حذف کند!');
+                return;
+            }
+            
+            if (username === 'amir990') {
+                alert('❌ نمی‌توانید ادمین اصلی را حذف کنید!');
+                return;
+            }
+            
+            const userToRemove = users[username];
+            if (!userToRemove) {
+                alert('❌ کاربر مورد نظر یافت نشد!');
+                return;
+            }
+            
+            if (confirm(`آیا مطمئن هستید که می‌خواهید کاربر "${userToRemove.gameName}" را کاملاً از سایت حذف کنید؟\n\n⚠️ این عمل غیرقابل بازگشت است و کاربر دیگر نمی‌تواند وارد سایت شود!`)) {
+                // Completely delete user from users object
+                delete users[username];
+                localStorage.setItem('carnivalUsers', JSON.stringify(users));
+                
+                // Remove user's IP from online users if exists
+                Object.keys(onlineUsers).forEach(ip => {
+                    if (onlineUsers[ip].username === username) {
+                        delete onlineUsers[ip];
+                    }
+                });
+                localStorage.setItem('carnivalOnlineUsers', JSON.stringify(onlineUsers));
+                
+                // If the removed user is currently logged in, force logout
+                if (currentUser && currentUser.username === username) {
+                    alert('⚠️ حساب کاربری شما توسط ادمین حذف شده است. در حال خروج از سیستم...');
+                    setTimeout(() => {
+                        logout();
+                        location.reload(); // Reload page to ensure complete logout
+                    }, 2000);
+                    return;
+                }
+                
+                updateUsersList();
+                updateAdminOnlineUsersDisplay();
+                alert(`✅ کاربر "${userToRemove.gameName}" کاملاً از سایت حذف شد!`);
+                showAdminNotification(`✅ کاربر "${userToRemove.gameName}" کاملاً حذف شد!`, 'success');
+            }
+        }
+        
+        // Add user back function
+        function addUserBack() {
+            if (!currentUser || !currentUser.isAdmin) {
+                alert('❌ فقط ادمین می‌تواند کاربران را اضافه کند!');
+                return;
+            }
+            
+            const username = document.getElementById('addUserName').value.trim();
+            if (!username) {
+                alert('❌ لطفاً نام کاربری را وارد کنید!');
+                return;
+            }
+            
+            // Check if user already exists
+            if (users[username]) {
+                alert('❌ کاربری با این نام کاربری قبلاً وجود دارد!');
+                return;
+            }
+            
+            // Create new user with default password
+            const defaultPassword = 'password123';
+            users[username] = {
+                password: defaultPassword,
+                gameName: username, // Use username as default game name
+                isAdmin: false,
+                loginTime: null,
+                createdAt: new Date().toISOString(),
+                createdBy: currentUser.gameName
+            };
+            
+            localStorage.setItem('carnivalUsers', JSON.stringify(users));
+            
+            document.getElementById('addUserName').value = '';
+            updateUsersList();
+            
+            alert(`✅ کاربر جدید "${username}" با موفقیت اضافه شد!\nرمز عبور پیش‌فرض: ${defaultPassword}\nنام در بازی: ${username}`);
+            showAdminNotification(`✅ کاربر جدید "${username}" اضافه شد!`, 'success');
         }
         
         // Update admin online users display (IP tracking)
@@ -1491,7 +2006,13 @@
                 loadContent();
                 loadHomeContent();
                 updateTutorialDeleteList();
-                alert('✅ آموزش با موفقیت حذف شد!');
+                updateDeleteLists();
+                
+                alert(`✅ آموزش "${tutorialToDelete.title}" با موفقیت حذف شد!`);
+                showAdminNotification(`✅ آموزش با موفقیت حذف شد!`, 'success');
+                
+                // Trigger live update for all users
+                triggerLiveUpdate('delete', 'tutorials', tutorialToDelete);
             }
         }
 
@@ -1591,7 +2112,13 @@
                 loadContent();
                 loadHomeContent();
                 updateGroupDeleteList();
-                alert('✅ گروه با موفقیت حذف شد!');
+                updateDeleteLists();
+                
+                alert(`✅ گروه "${groupToDelete.title}" با موفقیت حذف شد!`);
+                showAdminNotification(`✅ گروه با موفقیت حذف شد!`, 'success');
+                
+                // Trigger live update for all users
+                triggerLiveUpdate('delete', 'groups', groupToDelete);
             }
         }
 
@@ -1633,12 +2160,16 @@
             let aboutData = JSON.parse(localStorage.getItem('carnivalAbout') || '{}');
             aboutData.text = newText;
             aboutData.updatedAt = new Date().toISOString();
+            aboutData.editedBy = currentUser.gameName;
             localStorage.setItem('carnivalAbout', JSON.stringify(aboutData));
             
             // Update display
             loadAboutSection();
             cancelAboutEdit();
             alert('✅ درباره کارناوال با موفقیت بروزرسانی شد!');
+            
+            // Trigger live update for all users
+            triggerLiveUpdate('edit', 'about', { title: 'درباره کارناوال', text: newText });
         }
 
         function cancelAboutEdit() {
@@ -1808,7 +2339,8 @@
                 keepUserActive();
                 updateOnlineUsersDisplay();
                 checkForContentUpdates();
-            }, 5000); // Every 5 seconds
+                checkForLiveUpdates();
+            }, 2000); // Every 2 seconds for faster updates
             
             // Update users list every 30 seconds
             setInterval(updateUsersList, 30000);
@@ -1819,5 +2351,5 @@
             document.addEventListener('keypress', keepUserActive);
         });
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96bd8bacc6b5697b',t:'MTc1NDY0MDcxMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96becbf795cfcd05',t:'MTc1NDY1MzgzMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
